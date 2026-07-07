@@ -36,6 +36,7 @@ export default function App() {
   const [dbState, setDbState] = useState<DbState | null>(null);
   
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Initial data loading
   useEffect(() => {
@@ -44,17 +45,26 @@ export default function App() {
 
   const fetchInitialData = async () => {
     setLoading(true);
+    setError(null);
     try {
       // 1. Fetch User Profile, Settings and Metrics
       const userRes = await fetch("/api/user");
+      if (!userRes.ok) {
+        throw new Error(`Failed to load user profile: ${userRes.status} ${userRes.statusText}`);
+      }
       const userData = await userRes.json();
       if (userData.success) {
         setUser(userData.user);
         setMetrics(userData.metrics);
+      } else {
+        throw new Error(userData.error || "Failed to load user data");
       }
 
       // 2. Fetch Invoices
       const invRes = await fetch("/api/user/invoices");
+      if (!invRes.ok) {
+        throw new Error(`Failed to load invoices: ${invRes.status} ${invRes.statusText}`);
+      }
       const invData = await invRes.json();
       if (invData.success) {
         setInvoices(invData.invoices);
@@ -62,6 +72,9 @@ export default function App() {
 
       // 3. Fetch Simulator Cart and Inventory
       const simRes = await fetch("/api/simulator/cart");
+      if (!simRes.ok) {
+        throw new Error(`Failed to load cart: ${simRes.status} ${simRes.statusText}`);
+      }
       const simData = await simRes.json();
       if (simData.success) {
         setCart(simData.cart);
@@ -70,11 +83,15 @@ export default function App() {
 
       // 4. Fetch Raw Database State
       const dbRes = await fetch("/api/db/raw");
+      if (!dbRes.ok) {
+        throw new Error(`Failed to load raw db state: ${dbRes.status} ${dbRes.statusText}`);
+      }
       const dbData = await dbRes.json();
       setDbState(dbData);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load initial SaaS dashboard data", err);
+      setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
@@ -194,6 +211,49 @@ export default function App() {
       console.error("Reset DDL failed", err);
     }
   };
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#070b13] text-red-400 font-mono flex-col p-6 gap-6 max-w-md mx-auto text-center">
+        <div className="relative h-12 w-12 rounded-lg bg-red-500/10 p-2 flex items-center justify-center border border-red-500/20 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+          <Cpu className="h-6 w-6 animate-pulse text-red-500" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-lg font-black tracking-wider uppercase text-red-500">Connection Failed</h1>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            The dashboard could not establish a connection to the backend API services.
+          </p>
+        </div>
+        <div className="w-full bg-red-950/20 border border-red-500/10 rounded-lg p-3 text-left">
+          <span className="block text-[10px] text-red-400/50 uppercase tracking-widest font-bold mb-1">Diagnostic Log</span>
+          <code className="text-xs break-all text-slate-300">{error}</code>
+        </div>
+        <div className="flex gap-3 w-full">
+          <button
+            onClick={fetchInitialData}
+            className="flex-1 py-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Retry Connection
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                setError(null);
+                setLoading(true);
+                await fetch("/api/db/reset", { method: "POST" });
+                await fetchInitialData();
+              } catch (e: any) {
+                setError(`Reset failed: ${e.message}`);
+              }
+            }}
+            className="py-2 px-4 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Reset Database
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading || !user) {
     return (
