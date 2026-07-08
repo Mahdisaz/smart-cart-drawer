@@ -4,6 +4,8 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
 import crypto from "crypto";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 // Ensure environment variables are loaded
 import dotenv from "dotenv";
@@ -228,7 +230,31 @@ const DEFAULT_DB: DbSchema = {
 };
 
 // Database utility functions
-function readDb(): DbSchema {
+// ==========================================
+// FIRESTORE INITIALIZATION & DB UTILS
+// ==========================================
+
+let firestoreDb: any = null;
+let useFirestore = false;
+let localDbCache: DbSchema | null = null;
+
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const firebaseApp = initializeApp(firebaseConfig);
+    firestoreDb = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+    useFirestore = true;
+    console.log("Firebase Firestore initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.warn("Warning: firebase-applet-config.json not found, falling back to local JSON database.");
+  }
+} catch (err) {
+  console.error("Failed to initialize Firebase Firestore, falling back to local JSON database:", err);
+}
+
+// Local file DB backup utilities
+function readDbFromFile(): DbSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
       fs.writeFileSync(DB_FILE, JSON.stringify(DEFAULT_DB, null, 2), "utf8");
@@ -284,11 +310,90 @@ function readDb(): DbSchema {
   }
 }
 
-function writeDb(data: DbSchema) {
+function writeDbToFile(data: DbSchema) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
     console.error("Error writing db.json", err);
+  }
+}
+
+// Async loader to pull Firestore data into localDbCache on boot
+async function initFirestoreState() {
+  if (!useFirestore || !firestoreDb) return;
+  try {
+    console.log("Fetching state from Firestore...");
+    const docRef = doc(firestoreDb, "appState", "current");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const dbData = docSnap.data() as DbSchema;
+      // Validate or auto-heal fields
+      let changed = false;
+      if (!dbData.users || !Array.isArray(dbData.users) || dbData.users.length === 0) {
+        dbData.users = DEFAULT_DB.users;
+        changed = true;
+      }
+      if (!dbData.inventory || !Array.isArray(dbData.inventory) || dbData.inventory.length === 0) {
+        dbData.inventory = DEFAULT_DB.inventory;
+        changed = true;
+      }
+      if (!dbData.cart_items || !Array.isArray(dbData.cart_items)) {
+        dbData.cart_items = DEFAULT_DB.cart_items;
+        changed = true;
+      }
+      if (!dbData.metrics || typeof dbData.metrics !== "object") {
+        dbData.metrics = DEFAULT_DB.metrics;
+        changed = true;
+      }
+      if (!dbData.crypto_invoices || !Array.isArray(dbData.crypto_invoices)) {
+        dbData.crypto_invoices = DEFAULT_DB.crypto_invoices;
+        changed = true;
+      }
+      
+      localDbCache = dbData;
+      if (changed) {
+        await setDoc(docRef, dbData);
+      }
+      writeDbToFile(dbData);
+      console.log("Loaded persistent state from Firestore successfully!");
+    } else {
+      console.log("No state document found in Firestore. Seeding defaults...");
+      localDbCache = DEFAULT_DB;
+      await setDoc(docRef, DEFAULT_DB);
+      writeDbToFile(DEFAULT_DB);
+      console.log("Successfully seeded default state to Firestore.");
+    }
+  } catch (err) {
+    console.error("Error loading state from Firestore, falling back to local file:", err);
+    localDbCache = readDbFromFile();
+  }
+}
+
+// Trigger initial Firestore fetch asynchronously
+if (useFirestore) {
+  initFirestoreState().catch(err => {
+    console.error("Initial Firestore state sync failed on boot:", err);
+  });
+}
+
+// Public DB utility functions used by other routes
+function readDb(): DbSchema {
+  if (localDbCache) {
+    return localDbCache;
+  }
+  localDbCache = readDbFromFile();
+  return localDbCache;
+}
+
+function writeDb(data: DbSchema) {
+  localDbCache = data;
+  writeDbToFile(data);
+  
+  if (useFirestore && firestoreDb) {
+    const docRef = doc(firestoreDb, "appState", "current");
+    setDoc(docRef, data).catch(err => {
+      console.error("Failed to sync database to Firestore in background:", err);
+    });
   }
 }
 
