@@ -4,8 +4,8 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
 import crypto from "crypto";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
 // Ensure environment variables are loaded
 import dotenv from "dotenv";
@@ -242,15 +242,23 @@ try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(configPath)) {
     const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    const firebaseApp = initializeApp(firebaseConfig);
-    firestoreDb = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+    if (getApps().length === 0) {
+      initializeApp({
+        projectId: firebaseConfig.projectId
+      });
+    }
+    if (firebaseConfig.firestoreDatabaseId) {
+      firestoreDb = getFirestore(undefined as any, firebaseConfig.firestoreDatabaseId);
+    } else {
+      firestoreDb = getFirestore();
+    }
     useFirestore = true;
-    console.log("Firebase Firestore initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
+    console.log("Firebase Admin Firestore initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId || "(default)");
   } else {
     console.warn("Warning: firebase-applet-config.json not found, falling back to local JSON database.");
   }
 } catch (err) {
-  console.error("Failed to initialize Firebase Firestore, falling back to local JSON database:", err);
+  console.error("Failed to initialize Firebase Admin Firestore, falling back to local JSON database:", err);
 }
 
 // Local file DB backup utilities
@@ -322,10 +330,10 @@ function writeDbToFile(data: DbSchema) {
 async function initFirestoreState() {
   if (!useFirestore || !firestoreDb) return;
   try {
-    console.log("Fetching state from Firestore...");
-    const docRef = doc(firestoreDb, "appState", "current");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
+    console.log("Fetching state from Firestore using Admin SDK...");
+    const docRef = firestoreDb.collection("appState").doc("current");
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
       const dbData = docSnap.data() as DbSchema;
       // Validate or auto-heal fields
       let changed = false;
@@ -352,14 +360,14 @@ async function initFirestoreState() {
       
       localDbCache = dbData;
       if (changed) {
-        await setDoc(docRef, dbData);
+        await docRef.set(dbData);
       }
       writeDbToFile(dbData);
       console.log("Loaded persistent state from Firestore successfully!");
     } else {
       console.log("No state document found in Firestore. Seeding defaults...");
       localDbCache = DEFAULT_DB;
-      await setDoc(docRef, DEFAULT_DB);
+      await docRef.set(DEFAULT_DB);
       writeDbToFile(DEFAULT_DB);
       console.log("Successfully seeded default state to Firestore.");
     }
@@ -385,13 +393,14 @@ function readDb(): DbSchema {
   return localDbCache;
 }
 
+// Write database to file and update Firestore in background
 function writeDb(data: DbSchema) {
   localDbCache = data;
   writeDbToFile(data);
   
   if (useFirestore && firestoreDb) {
-    const docRef = doc(firestoreDb, "appState", "current");
-    setDoc(docRef, data).catch(err => {
+    const docRef = firestoreDb.collection("appState").doc("current");
+    docRef.set(data).catch(err => {
       console.error("Failed to sync database to Firestore in background:", err);
     });
   }
