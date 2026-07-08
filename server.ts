@@ -18,9 +18,13 @@ app.use(express.json());
 const DB_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
 const DB_FILE = path.join(DB_DIR, "db.json");
 
-// Ensure data directory exists
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
+// Ensure data directory exists safely
+try {
+  if (!fs.existsSync(DB_DIR)) {
+    fs.mkdirSync(DB_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error("Warning: Could not create or verify database directory:", err);
 }
 
 // Interfaces

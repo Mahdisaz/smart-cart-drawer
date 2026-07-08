@@ -50,7 +50,12 @@ export default function App() {
       // 1. Fetch User Profile, Settings and Metrics
       const userRes = await fetch("/api/user");
       if (!userRes.ok) {
-        throw new Error(`Failed to load user profile: ${userRes.status} ${userRes.statusText}`);
+        let errMsg = `Failed to load user profile: ${userRes.status} ${userRes.statusText}`;
+        try {
+          const errData = await userRes.json();
+          if (errData && errData.error) errMsg = errData.error;
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       const userData = await userRes.json();
       if (userData.success) {
@@ -63,7 +68,12 @@ export default function App() {
       // 2. Fetch Invoices
       const invRes = await fetch("/api/user/invoices");
       if (!invRes.ok) {
-        throw new Error(`Failed to load invoices: ${invRes.status} ${invRes.statusText}`);
+        let errMsg = `Failed to load invoices: ${invRes.status} ${invRes.statusText}`;
+        try {
+          const errData = await invRes.json();
+          if (errData && errData.error) errMsg = errData.error;
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       const invData = await invRes.json();
       if (invData.success) {
@@ -73,7 +83,12 @@ export default function App() {
       // 3. Fetch Simulator Cart and Inventory
       const simRes = await fetch("/api/simulator/cart");
       if (!simRes.ok) {
-        throw new Error(`Failed to load cart: ${simRes.status} ${simRes.statusText}`);
+        let errMsg = `Failed to load cart: ${simRes.status} ${simRes.statusText}`;
+        try {
+          const errData = await simRes.json();
+          if (errData && errData.error) errMsg = errData.error;
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       const simData = await simRes.json();
       if (simData.success) {
@@ -84,7 +99,12 @@ export default function App() {
       // 4. Fetch Raw Database State
       const dbRes = await fetch("/api/db/raw");
       if (!dbRes.ok) {
-        throw new Error(`Failed to load raw db state: ${dbRes.status} ${dbRes.statusText}`);
+        let errMsg = `Failed to load raw db state: ${dbRes.status} ${dbRes.statusText}`;
+        try {
+          const errData = await dbRes.json();
+          if (errData && errData.error) errMsg = errData.error;
+        } catch (_) {}
+        throw new Error(errMsg);
       }
       const dbData = await dbRes.json();
       setDbState(dbData);
