@@ -14,6 +14,41 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Logger middleware to capture internal errors
+app.use((req, res, next) => {
+  const logFile = path.join(process.cwd(), "data", "server_logs.txt");
+  const originalSend = res.send;
+  const originalJson = res.json;
+  const originalStatus = res.status;
+  
+  let statusCode = 200;
+  res.status = function(code) {
+    statusCode = code;
+    return originalStatus.apply(this, arguments as any);
+  };
+
+  const logRequest = (bodyData: any) => {
+    try {
+      const logMsg = `[${new Date().toISOString()}] ${req.method} ${req.url} -> Status: ${statusCode}\nHeaders: ${JSON.stringify(req.headers)}\nResponse: ${JSON.stringify(bodyData)}\n----------------------------------------\n`;
+      fs.appendFileSync(logFile, logMsg);
+    } catch (e) {
+      console.error("Logger error:", e);
+    }
+  };
+
+  res.send = function(body) {
+    logRequest(body);
+    return originalSend.apply(this, arguments as any);
+  };
+
+  res.json = function(body) {
+    logRequest(body);
+    return originalJson.apply(this, arguments as any);
+  };
+
+  next();
+});
+
 // Path to local JSON database
 const DB_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
 const DB_FILE = path.join(DB_DIR, "db.json");
