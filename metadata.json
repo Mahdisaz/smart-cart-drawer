@@ -1,6 +1,0 @@
-{
-  "name": "Smart Cart Drawer & AI Upsell",
-  "description": "A high-converting cyberpunk-style e-commerce Micro-SaaS that displays a gorgeous sliding cart drawer with real-time, Gemini-powered product upsell recommendations and direct P2P USDT (TRC-20) subscription payments.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
